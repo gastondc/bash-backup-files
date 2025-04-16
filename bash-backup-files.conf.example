@@ -1,18 +1,16 @@
-{
-  "projects": [
-    {
-      "name": "project1",
-      "path": "/etc/mysql"
-    },
-    {
-      "name": "project2",
-      "path": "/var/www"
-    }
-  ],
-  "LOCAL_PATH": "/var/backups/files",
-  "CLOUD_BUCKET": "gs://bucket-backups-servers/files",
-  "REMOTE_HOST": "",
-  "RETENTION_DAYS": 7,
-  "ENCRYPTION_KEY": "mySecretPassword",
-  "MODE": "local"
-}
+# backup.conf
+#
+# Define an array where each element contains the project name and its path separated by a colon.
+# Make sure that the project name does not contain the colon character.
+PROJECTS=(
+  "project1:/etc/mysql"
+  "project2:/var/www"
+)
+
+# Additional configuration variables
+LOCAL_PATH="/var/backups/files"
+CLOUD_BUCKET="gs://bucket-backups-servers/files"
+REMOTE_HOST=""                  # Optional, for SSH transfers
+RETENTION_DAYS=7
+ENCRYPTION_KEY="mySecretPassword"  # If empty, no encryption will be applied
+MODE="local"                    # Valid values: local, s3, gcp
