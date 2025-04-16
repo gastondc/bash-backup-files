@@ -3,22 +3,23 @@ set -o pipefail
 
 # Ruta del archivo de configuración.
 # Puedes ajustar la ruta si lo deseas, por ejemplo: /etc/files-backup.conf
-CONFIG_FILE="$(dirname "$0")/bash-backup-files.conf"
+CONFIG_FILE="$(dirname "$0")/files-backup.conf"
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
 fi
 
-# Asignar valores por defecto en caso de que no se hayan definido en el archivo de configuración.
-# Se espera que FILES_TO_BACKUP sea una lista separada por comas, por ejemplo:
-# FILES_TO_BACKUP="/etc,/var/www,/home/usuario"
-: ${FILES_TO_BACKUP:="/path/to/your/files"}
-: ${DEFAULT_CLOUD_BUCKET:="gs://bucket-backups-servers/files"}
-: ${CLOUD_BUCKET:="$DEFAULT_CLOUD_BUCKET"}
+# Valores por defecto (se pueden sobrescribir en el archivo de configuración)
 : ${LOCAL_PATH:="/var/backups/files"}
+: ${CLOUD_BUCKET:="gs://bucket-backups-servers/files"}
 : ${REMOTE_HOST:=""}
 : ${RETENTION_DAYS:=7}
 : ${ENCRYPTION_KEY:=""}
 : ${MODE:="gcp"}
+
+# Se esperan dos arrays: PROJECT_NAMES y PROJECT_PATHS, que deben tener la misma cantidad de elementos.
+# Por ejemplo:
+#   PROJECT_NAMES=("project1" "project2")
+#   PROJECT_PATHS=("/etc/mysql" "/var/www")
 
 LOG_FILE="/var/log/backups-files.log"
 BACKUP_DATE=$(date +%Y%m%d-%H%M)
@@ -68,7 +69,7 @@ exit 1
 done
 shift $((OPTIND - 1))
 
-# Function for logging with timestamp
+# Función para registrar mensajes con timestamp
 log_check_message() {
     local timestamp
     timestamp=$(date '+%a %b %e %T %Y')
@@ -80,22 +81,24 @@ log_check_message() {
     fi
 }
 
-# Function to backup a directory or file
+# Función para respaldar un directorio o archivo
+# Parámetros:
+#   $1: Nombre del proyecto (utilizado para formar el nombre del backup)
+#   $2: Path del directorio o archivo a respaldar
 backup_item() {
-    local item="$1"
-    local base_item
-    base_item=$(basename "$item")
+    local project="$1"
+    local item="$2"
     local ext=".tar.gz"
     if [ -n "$ENCRYPTION_KEY" ]; then
         ext=".tar.gz.gpg"
     fi
-    local file_name="${base_item}-${BACKUP_DATE}${ext}"
+    local file_name="${project}-${BACKUP_DATE}${ext}"
     
-    log_check_message "[info] Starting backup of ${item}"
+    log_check_message "[info] Starting backup of ${item} (project: ${project})"
     
     if [ "$MODE" == "local" ]; then
         if [ -n "$REMOTE_HOST" ]; then
-            # Remote backup via SSH
+            # Backup remoto vía SSH
             local tmp_backup="/tmp/${file_name}"
             if [ -n "$ENCRYPTION_KEY" ]; then
                 tar czf - "$item" 2>/dev/null | \
@@ -119,7 +122,7 @@ backup_item() {
             fi
             rm -f "$tmp_backup"
         else
-            # Local backup on filesystem
+            # Backup local en filesystem
             mkdir -p "$LOCAL_PATH"
             local backup_file="${LOCAL_PATH}/${file_name}"
             if [ -n "$ENCRYPTION_KEY" ]; then
@@ -136,8 +139,8 @@ backup_item() {
             fi
         fi
     elif [ "$MODE" == "s3" ]; then
-        # Backup to AWS S3 using AWS CLI
-        local remote_file="${base_item}/${file_name}"
+        # Backup a AWS S3 usando AWS CLI
+        local remote_file="${project}/${file_name}"
         if [ -n "$ENCRYPTION_KEY" ]; then
             tar czf - "$item" 2>/dev/null | \
             gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$ENCRYPTION_KEY" | \
@@ -152,8 +155,8 @@ backup_item() {
             log_check_message "[info] S3 backup of ${item} completed: ${remote_file}"
         fi
     elif [ "$MODE" == "gcp" ]; then
-        # Backup to GCP using gsutil
-        local remote_file="${base_item}/${file_name}"
+        # Backup a GCP usando gsutil
+        local remote_file="${project}/${file_name}"
         if [ -n "$ENCRYPTION_KEY" ]; then
             tar czf - "$item" 2>/dev/null | \
             gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$ENCRYPTION_KEY" | \
@@ -173,7 +176,7 @@ backup_item() {
     fi
 }
 
-# Function to apply retention policy on local backups (or remote backups via SSH)
+# Función para aplicar la política de retención en backups locales (o en host remoto vía SSH)
 apply_retention_policy() {
     log_check_message "[info] Applying retention policy: deleting backups older than ${RETENTION_DAYS} days."
     if [ "$MODE" == "local" ]; then
@@ -197,18 +200,22 @@ apply_retention_policy() {
     fi
 }
 
-# Main function to coordinate the backup process
+# Función principal para coordinar el proceso de backup
 main() {
-    # Convert comma separated list into an array
-    IFS=',' read -ra items <<< "$FILES_TO_BACKUP"
-    for item in "${items[@]}"; do
-        # Remove extra spaces if any
-        item=$(echo "$item" | xargs)
-        if [ -n "$item" ]; then
-            if [ -e "$item" ]; then
-                backup_item "$item"
+    # Verificar que ambos arrays existan y tengan la misma longitud
+    if [ "${#PROJECT_NAMES[@]}" -ne "${#PROJECT_PATHS[@]}" ]; then
+        log_check_message "[error] PROJECT_NAMES and PROJECT_PATHS must have the same number of elements."
+        exit 1
+    fi
+
+    for (( i=0; i<${#PROJECT_NAMES[@]}; i++ )); do
+        project=$(echo "${PROJECT_NAMES[$i]}" | xargs)
+        path=$(echo "${PROJECT_PATHS[$i]}" | xargs)
+        if [ -n "$project" ] && [ -n "$path" ]; then
+            if [ -e "$path" ]; then
+                backup_item "$project" "$path"
             else
-                log_check_message "[error] Backup target '$item' does not exist"
+                log_check_message "[error] Backup target '$path' (project: $project) does not exist"
                 ERROR_COUNT=$((ERROR_COUNT+1))
             fi
         fi
