@@ -2,7 +2,7 @@
 set -o pipefail
 
 # Ruta del archivo de configuración en formato JSON.
-CONFIG_FILE="$(dirname "$0")/bash-backup-files.json"
+CONFIG_FILE="$(dirname "$0")/bash-backup-files.conf"
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "Configuration file $CONFIG_FILE not found."
     exit 1
