@@ -1,31 +1,32 @@
 #!/bin/bash
 set -o pipefail
 
-# Ruta del archivo de configuración.
-# Puedes ajustar la ruta si lo deseas, por ejemplo: /etc/files-backup.conf
-CONFIG_FILE="$(dirname "$0")/bash-backup-files.conf"
-if [ -f "$CONFIG_FILE" ]; then
-    source "$CONFIG_FILE"
+# Ruta del archivo de configuración en formato JSON.
+CONFIG_FILE="$(dirname "$0")/bash-backup-files.json"
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Configuration file $CONFIG_FILE not found."
+    exit 1
 fi
 
-# Valores por defecto (se pueden sobrescribir en el archivo de configuración)
-: ${LOCAL_PATH:="/var/backups/files"}
-: ${CLOUD_BUCKET:="gs://bucket-backups-servers/files"}
-: ${REMOTE_HOST:=""}
-: ${RETENTION_DAYS:=7}
-: ${ENCRYPTION_KEY:=""}
-: ${MODE:="gcp"}
+# Requerimos jq para parsear el JSON
+if ! command -v jq > /dev/null; then
+    echo "jq command not found. Please install jq to use this script."
+    exit 1
+fi
 
-# Se esperan dos arrays: PROJECT_NAMES y PROJECT_PATHS, que deben tener la misma cantidad de elementos.
-# Por ejemplo:
-#   PROJECT_NAMES=("project1" "project2")
-#   PROJECT_PATHS=("/etc/mysql" "/var/www")
+# Cargar variables desde el archivo JSON usando jq
+LOCAL_PATH=$(jq -r '.LOCAL_PATH' "$CONFIG_FILE")
+CLOUD_BUCKET=$(jq -r '.CLOUD_BUCKET' "$CONFIG_FILE")
+REMOTE_HOST=$(jq -r '.REMOTE_HOST' "$CONFIG_FILE")
+RETENTION_DAYS=$(jq -r '.RETENTION_DAYS' "$CONFIG_FILE")
+ENCRYPTION_KEY=$(jq -r '.ENCRYPTION_KEY' "$CONFIG_FILE")
+MODE=$(jq -r '.MODE' "$CONFIG_FILE")
 
 LOG_FILE="/var/log/backups-files.log"
 BACKUP_DATE=$(date +%Y%m%d-%H%M)
 ERROR_COUNT=0
 
-# Process command line options
+# Process command line options (opcional, para poder sobrescribir la configuración)
 while getopts "m:l:b:k:T:h:" opt; do
     case $opt in
         m) MODE=$OPTARG ;;
@@ -48,10 +49,9 @@ Options:
          For 'local', this is the destination folder on the system.
          For remote transfers (with -h), this is the folder on the remote host.
          
-  -b  Cloud bucket path (for gcp and s3 modes). Example:
-         gs://my-bucket/path or s3://my-bucket/path
+  -b  Cloud bucket path (for gcp and s3 modes).
          
-  -k  Encryption key to protect the backup using GPG symmetric encryption (AES256).
+  -k  Encryption key for GPG symmetric encryption (AES256).
   
   -T  Retention days: number of days to keep backup files.
   
@@ -83,8 +83,8 @@ log_check_message() {
 
 # Función para respaldar un directorio o archivo
 # Parámetros:
-#   $1: Nombre del proyecto (utilizado para formar el nombre del backup)
-#   $2: Path del directorio o archivo a respaldar
+#   $1: Nombre del proyecto (usado en el nombre del backup)
+#   $2: Path a respaldar
 backup_item() {
     local project="$1"
     local item="$2"
@@ -202,15 +202,15 @@ apply_retention_policy() {
 
 # Función principal para coordinar el proceso de backup
 main() {
-    # Verificar que ambos arrays existan y tengan la misma longitud
-    if [ "${#PROJECT_NAMES[@]}" -ne "${#PROJECT_PATHS[@]}" ]; then
-        log_check_message "[error] PROJECT_NAMES and PROJECT_PATHS must have the same number of elements."
-        exit 1
-    fi
-
-    for (( i=0; i<${#PROJECT_NAMES[@]}; i++ )); do
-        project=$(echo "${PROJECT_NAMES[$i]}" | xargs)
-        path=$(echo "${PROJECT_PATHS[$i]}" | xargs)
+    # Recorrer cada proyecto definido en el JSON.
+    # Se usa jq para iterar por el array de proyectos.
+    project_count=$(jq '.projects | length' "$CONFIG_FILE")
+    for (( i=0; i<project_count; i++ )); do
+        project=$(jq -r ".projects[$i].name" "$CONFIG_FILE")
+        path=$(jq -r ".projects[$i].path" "$CONFIG_FILE")
+        # Eliminar espacios en blanco, si los hubiera.
+        project=$(echo "$project" | xargs)
+        path=$(echo "$path" | xargs)
         if [ -n "$project" ] && [ -n "$path" ]; then
             if [ -e "$path" ]; then
                 backup_item "$project" "$path"
