@@ -1,97 +1,103 @@
+[English](#english-documentation) | [Español](#documentación-en-español)
+
 # Backup Script Documentation
 
 ## English Documentation
 
-This backup script is designed to back up files or directories defined in a configuration file. The configuration file (typically named `files-backup.conf`) should specify the variable `FILES_TO_BACKUP` as a comma-separated list of paths. The script supports the following modes:
-  
-- **local**: The backup is stored in a local directory. Optionally, the backup can be transferred to a remote host via SSH if the `REMOTE_HOST` variable is provided.
-- **s3**: The backup is uploaded to an AWS S3 bucket via the AWS CLI.
-- **gcp**: The backup is uploaded to a Google Cloud Storage bucket using `gsutil`.
+This backup script backs up files or directories defined in a simple configuration file named `bash-backup-files.conf`. Instead of using separate arrays or JSON, the configuration groups the project name and the path together in a single array. Each element in the array is formatted as:
+
+   project_name:path
+
+For example:
+
+   PROJECTS=(
+     "project1:/etc/mysql"
+     "project2:/var/www"
+   )
 
 ### Features
 
+- **Grouping of Values:**  
+  Each project is defined as a single element combining the project name and its path, separated by a colon.
+
 - **Compression & Encryption:**  
-  The script creates backups using `tar` with gzip compression. If an encryption key (`ENCRYPTION_KEY`) is provided, the backup file will be encrypted using GPG with AES256 symmetric encryption.
-  
-- **Configuration:**  
-  Default values are set within the script but can be overwritten via the configuration file. The `FILES_TO_BACKUP` variable should be defined as a comma-separated list (e.g., `FILES_TO_BACKUP="/etc,/var/www,/home/usuario"`).
+  The script creates backups using tar with gzip compression. If an encryption key (`ENCRYPTION_KEY`) is provided in the configuration, the backup will be encrypted with GPG using AES256 symmetric encryption.
+
+- **Multiple Backup Modes:**  
+  The script supports backup modes:
+
+    - **local:** Store backups on a local directory. Optionally, they can be transferred via SSH to a remote host if `REMOTE_HOST` is defined.
+    - **s3:** Upload backups to an AWS S3 bucket.
+    - **gcp:** Upload backups to a Google Cloud Storage bucket.
 
 - **Retention Policy:**  
-  Backups older than a specified number of days (`RETENTION_DAYS`) are automatically deleted.
+  Backups older than the specified number of days (`RETENTION_DAYS`) are automatically deleted.
 
 ### How to Use
 
 1. **Edit the Configuration File:**  
-   Modify `files-backup.conf` to set variables such as `FILES_TO_BACKUP`, `LOCAL_PATH`, `CLOUD_BUCKET`, etc.
+   Create or modify `bash-backup-files.conf` and define the projects array along with other variables such as `LOCAL_PATH`, `CLOUD_BUCKET`, `REMOTE_HOST`, etc.
 
-2. **Run the Script with Options:**  
-   - `-m`: Mode of operation (`local`, `s3`, or `gcp`).
-   - `-l`: Local backup path (or destination folder on the remote host when using `-h`).
-   - `-b`: Cloud bucket path (for `s3` and `gcp` modes).
+2. **Run the Script:**  
+   Execute the backup script (e.g., `./bash-backup-files.sh`) with command line options that can override the configuration if needed:
+
+   - `-m`: Backup mode (`local`, `s3`, or `gcp`).
+   - `-l`: Local backup path.
+   - `-b`: Cloud bucket path (for s3 or gcp modes).
    - `-k`: Encryption key for GPG (AES256).
-   - `-T`: Number of days for backup retention.
-   - `-h`: Remote host (optional, for SSH transfers).
+   - `-T`: Retention days.
+   - `-h`: Remote host for SSH transfers.
 
-**Example Commands:**
+**Example Command:**
 
-- Backup locally with a retention of 7 days:  
-  `./backup_script.sh -m local -l /backups/files -T 7`
-  
-- Backup to Google Cloud Storage with encryption:  
-  `./backup_script.sh -m gcp -b gs://my-bucket/path -k mysecret`
-
-### Decryption Command
-
-To decrypt an encrypted backup file (with a `.gpg` extension) created using the script, you can use the following command:
-
-`gpg --decrypt --batch --yes --passphrase <your_passphrase> -o output_file backup_file`
-
-Replace `<your_passphrase>` with your encryption key, `backup_file` with the encrypted file name, and `output_file` with the name for the decrypted output.
+   ./bash-backup-files.sh -m local -l /backups/files -T 7
 
 ## Documentación en Español
 
-Este script de backup está diseñado para respaldar archivos o directorios definidos en un archivo de configuración. El archivo de configuración (usualmente llamado `files-backup.conf`) debe especificar la variable `FILES_TO_BACKUP` como una lista separada por comas de rutas. El script admite los siguientes modos:
+Este script de backup respalda archivos o directorios definidos en un archivo de configuración sencillo llamado `bash-backup-files.conf`. En lugar de usar arrays separados o JSON, la configuración agrupa el nombre del proyecto y la ruta en un solo array. Cada elemento del array se formatea de la siguiente manera:
 
-- **local**: El respaldo se guarda en un directorio local. Opcionalmente, puede transferirse a un host remoto vía SSH si se proporciona la variable `REMOTE_HOST`.
-- **s3**: El respaldo se carga en un bucket de AWS S3 utilizando AWS CLI.
-- **gcp**: El respaldo se carga en un bucket de Google Cloud Storage mediante `gsutil`.
+   nombre_proyecto:ruta
+
+Por ejemplo:
+
+   PROJECTS=(
+     "proyecto1:/etc/mysql"
+     "proyecto2:/var/www"
+   )
 
 ### Características
 
+- **Agrupación de Valores:**  
+  Cada proyecto se define como un solo elemento que combina el nombre del proyecto y su ruta, separados por dos puntos.
+
 - **Compresión y Encriptación:**  
-  El script crea backups usando `tar` con compresión gzip. Si se proporciona una clave de encriptación (`ENCRYPTION_KEY`), el archivo se encriptará usando GPG con encriptación simétrica AES256.
-  
-- **Configuración:**  
-  El script tiene valores por defecto que pueden ser sobrescritos mediante el archivo de configuración. La variable `FILES_TO_BACKUP` debe definirse como una lista separada por comas (por ejemplo, `FILES_TO_BACKUP="/etc,/var/www,/home/usuario"`).
+  El script crea backups usando tar con compresión gzip. Si se provee una clave de encriptación (`ENCRYPTION_KEY`) en la configuración, el backup se encripta con GPG utilizando encriptación simétrica AES256.
+
+- **Modos de Respaldo Múltiples:**  
+  El script soporta los siguientes modos de backup:
+
+    - **local:** Guarda el backup en un directorio local. Opcionalmente, puede transferirse vía SSH a un host remoto si se define `REMOTE_HOST`.
+    - **s3:** Sube el backup a un bucket de AWS S3.
+    - **gcp:** Sube el backup a un bucket de Google Cloud Storage.
 
 - **Política de Retención:**  
-  Se eliminan automáticamente los backups que sean más antiguos que el número de días especificado en `RETENTION_DAYS`.
+  Se eliminan automáticamente los backups que sean más antiguos que la cantidad de días especificada (`RETENTION_DAYS`).
 
 ### Cómo Usarlo
 
 1. **Editar el Archivo de Configuración:**  
-   Modifica `files-backup.conf` para definir variables como `FILES_TO_BACKUP`, `LOCAL_PATH`, `CLOUD_BUCKET`, etc.
+   Crea o modifica el archivo `bash-backup-files.conf` y define el array de proyectos junto con otras variables como `LOCAL_PATH`, `CLOUD_BUCKET`, `REMOTE_HOST`, etc.
 
-2. **Ejecutar el Script con las Opciones Adecuadas:**  
-   - `-m`: Modo de operación (`local`, `s3` o `gcp`).
-   - `-l`: Ruta donde se almacenará el backup (o carpeta destino en el host remoto al usar `-h`).
-   - `-b`: Ruta del bucket en la nube (para los modos `s3` y `gcp`).
+2. **Ejecutar el Script:**  
+   Ejecuta el script de backup (por ejemplo, `./bash-backup-files.sh`) utilizando opciones en línea de comandos que puedan sobreescribir la configuración:
+
+   - `-m`: Modo de backup (`local`, `s3` o `gcp`).
+   - `-l`: Ruta local para el backup.
+   - `-b`: Ruta del bucket en la nube (para s3 o gcp).
    - `-k`: Clave de encriptación para GPG (AES256).
-   - `-T`: Número de días de retención del backup.
-   - `-h`: Host remoto (opcional, para transferencias vía SSH).
+   - `-T`: Días de retención.
+   - `-h`: Host remoto para transferencias vía SSH.
 
-**Ejemplos de Uso:**
+**Ejemplo de Comando:**
 
-- Realizar un backup local con retención de 7 días:  
-  `./backup_script.sh -m local -l /backups/files -T 7`
-  
-- Realizar un backup a Google Cloud Storage con encriptación:  
-  `./backup_script.sh -m gcp -b gs://mi-bucket/path -k miclave`
-
-### Comando para Desencriptar
-
-Para desencriptar un archivo de backup encriptado (con extensión `.gpg`) que fue creado utilizando el script, se puede utilizar el siguiente comando:
-
-`gpg --decrypt --batch --yes --passphrase <tu_clave> -o archivo_salida archivo_backup`
-
-Sustituye `<tu_clave>` por tu clave de encriptación, `archivo_backup` por el nombre del archivo encriptado y `archivo_salida` por el nombre del archivo desencriptado.
+   ./bash-backup-files.sh -m local -l /backups/files -T 7
