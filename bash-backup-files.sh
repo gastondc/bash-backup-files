@@ -1,32 +1,32 @@
 #!/bin/bash
 set -o pipefail
 
-# Ruta del archivo de configuración en formato JSON.
+# Configuration file (bash-backup-files.conf) must be in the same directory as this script.
 CONFIG_FILE="$(dirname "$0")/bash-backup-files.conf"
-if [ ! -f "$CONFIG_FILE" ]; then
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+else
     echo "Configuration file $CONFIG_FILE not found."
     exit 1
 fi
 
-# Requerimos jq para parsear el JSON
-if ! command -v jq > /dev/null; then
-    echo "jq command not found. Please install jq to use this script."
+# Ensure required configuration is set.
+# PROJECTS is expected to be an array with each element formatted as "project_name:path"
+if [ "${#PROJECTS[@]}" -eq 0 ]; then
+    echo "No projects defined in the configuration. Check bash-backup-files.conf."
     exit 1
 fi
 
-# Cargar variables desde el archivo JSON usando jq
-LOCAL_PATH=$(jq -r '.LOCAL_PATH' "$CONFIG_FILE")
-CLOUD_BUCKET=$(jq -r '.CLOUD_BUCKET' "$CONFIG_FILE")
-REMOTE_HOST=$(jq -r '.REMOTE_HOST' "$CONFIG_FILE")
-RETENTION_DAYS=$(jq -r '.RETENTION_DAYS' "$CONFIG_FILE")
-ENCRYPTION_KEY=$(jq -r '.ENCRYPTION_KEY' "$CONFIG_FILE")
-MODE=$(jq -r '.MODE' "$CONFIG_FILE")
-
+# Default log file location
 LOG_FILE="/var/log/backups-files.log"
+
+# Format backup date
 BACKUP_DATE=$(date +%Y%m%d-%H%M)
+
+# Counter for errors
 ERROR_COUNT=0
 
-# Process command line options (opcional, para poder sobrescribir la configuración)
+# Process command line options (these may override configuration values)
 while getopts "m:l:b:k:T:h:" opt; do
     case $opt in
         m) MODE=$OPTARG ;;
@@ -41,9 +41,9 @@ Usage: $0 [options]
 
 Options:
   -m  Mode of backup. Valid options:
-         gcp   -> Backup to a Google Cloud Storage bucket.
          local -> Backup to a local directory.
          s3    -> Backup to an AWS S3 bucket.
+         gcp   -> Backup to a Google Cloud Storage bucket.
          
   -l  Backup path:
          For 'local', this is the destination folder on the system.
@@ -69,7 +69,7 @@ exit 1
 done
 shift $((OPTIND - 1))
 
-# Función para registrar mensajes con timestamp
+# Function for logging with timestamp
 log_check_message() {
     local timestamp
     timestamp=$(date '+%a %b %e %T %Y')
@@ -81,10 +81,10 @@ log_check_message() {
     fi
 }
 
-# Función para respaldar un directorio o archivo
-# Parámetros:
-#   $1: Nombre del proyecto (usado en el nombre del backup)
-#   $2: Path a respaldar
+# Function to perform backup for a specific project.
+# Parameters:
+#   $1: Project name (used for naming the backup file)
+#   $2: Path to back up
 backup_item() {
     local project="$1"
     local item="$2"
@@ -93,12 +93,12 @@ backup_item() {
         ext=".tar.gz.gpg"
     fi
     local file_name="${project}-${BACKUP_DATE}${ext}"
-    
+
     log_check_message "[info] Starting backup of ${item} (project: ${project})"
-    
+
     if [ "$MODE" == "local" ]; then
         if [ -n "$REMOTE_HOST" ]; then
-            # Backup remoto vía SSH
+            # Remote backup via SSH
             local tmp_backup="/tmp/${file_name}"
             if [ -n "$ENCRYPTION_KEY" ]; then
                 tar czf - "$item" 2>/dev/null | \
@@ -122,7 +122,7 @@ backup_item() {
             fi
             rm -f "$tmp_backup"
         else
-            # Backup local en filesystem
+            # Local backup on filesystem
             mkdir -p "$LOCAL_PATH"
             local backup_file="${LOCAL_PATH}/${file_name}"
             if [ -n "$ENCRYPTION_KEY" ]; then
@@ -139,7 +139,7 @@ backup_item() {
             fi
         fi
     elif [ "$MODE" == "s3" ]; then
-        # Backup a AWS S3 usando AWS CLI
+        # Backup to AWS S3 using AWS CLI
         local remote_file="${project}/${file_name}"
         if [ -n "$ENCRYPTION_KEY" ]; then
             tar czf - "$item" 2>/dev/null | \
@@ -155,7 +155,7 @@ backup_item() {
             log_check_message "[info] S3 backup of ${item} completed: ${remote_file}"
         fi
     elif [ "$MODE" == "gcp" ]; then
-        # Backup a GCP usando gsutil
+        # Backup to GCP using gsutil
         local remote_file="${project}/${file_name}"
         if [ -n "$ENCRYPTION_KEY" ]; then
             tar czf - "$item" 2>/dev/null | \
@@ -171,12 +171,12 @@ backup_item() {
             log_check_message "[info] GCP backup of ${item} completed: ${remote_file}"
         fi
     else
-        echo "Unknown mode: $MODE. Valid options: gcp, local, s3"
+        echo "Unknown mode: $MODE. Valid options: local, s3, gcp"
         exit 1
     fi
 }
 
-# Función para aplicar la política de retención en backups locales (o en host remoto vía SSH)
+# Function to apply the retention policy on local backups (or remote backups via SSH)
 apply_retention_policy() {
     log_check_message "[info] Applying retention policy: deleting backups older than ${RETENTION_DAYS} days."
     if [ "$MODE" == "local" ]; then
@@ -200,15 +200,14 @@ apply_retention_policy() {
     fi
 }
 
-# Función principal para coordinar el proceso de backup
+# Main function to coordinate the backup process.
+# It iterates over each project defined in the PROJECTS array.
 main() {
-    # Recorrer cada proyecto definido en el JSON.
-    # Se usa jq para iterar por el array de proyectos.
-    project_count=$(jq '.projects | length' "$CONFIG_FILE")
-    for (( i=0; i<project_count; i++ )); do
-        project=$(jq -r ".projects[$i].name" "$CONFIG_FILE")
-        path=$(jq -r ".projects[$i].path" "$CONFIG_FILE")
-        # Eliminar espacios en blanco, si los hubiera.
+    for entry in "${PROJECTS[@]}"; do
+        # Each entry is expected to be "project_name:path"
+        project="${entry%%:*}"
+        path="${entry#*:}"
+        # Remove any extra spaces.
         project=$(echo "$project" | xargs)
         path=$(echo "$path" | xargs)
         if [ -n "$project" ] && [ -n "$path" ]; then
@@ -224,10 +223,10 @@ main() {
     apply_retention_policy
 
     if [ $ERROR_COUNT -gt 0 ]; then
-        log_check_message "[error] Process finished with ${ERROR_COUNT} errors"
+        log_check_message "[error] Process finished with ${ERROR_COUNT} errors."
         exit 1
     else
-        log_check_message "[info] All backups completed successfully"
+        log_check_message "[info] All backups completed successfully."
         exit 0
     fi
 }
