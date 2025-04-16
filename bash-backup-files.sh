@@ -3,7 +3,7 @@ set -o pipefail
 
 # Ruta del archivo de configuración.
 # Puedes ajustar la ruta si lo deseas, por ejemplo: /etc/files-backup.conf
-CONFIG_FILE="$(dirname "$0")/files-backup.conf"
+CONFIG_FILE="$(dirname "$0")/bash-backup-files.conf"
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
 fi
